@@ -10,14 +10,17 @@
 #include <string.h>
 #include "utility.h"
 
+ #define MEMORY 1024
+
 // Define your utility functions here, you will likely need to add more...
 
 void initializeResources (struct resources* resources) {
-	resources->numPrinters = 0;
-	resources->numScanners = 0;
-	resources->numModems = 0;
-	resources->numCDDrives = 0;
-	for (int i = 0; i < 1024; i++)
+	resources->numPrinters = 2;
+	resources->numScanners = 1;
+	resources->numModems = 1;
+	resources->numCDDrives = 2;
+
+	for (int i = 0; i < MEMORY; i++)
 		resources->memory[i] = 0;
 }
 
@@ -28,7 +31,10 @@ struct process* createProcess (int arrivalTime, int priority, int runTime, int m
 	process->arrivalTime = arrivalTime;
 	process->priority = priority;
 	process->runTime = runTime;
+	process->pid = 0;
+	process->address = -1;
 	process->memory = memory;
+	process->suspended = 0;
 	process->printers = printers;
 	process->scanners = scanners;
 	process->modems = modems;
@@ -37,15 +43,22 @@ struct process* createProcess (int arrivalTime, int priority, int runTime, int m
 	return process;
 }
 
-int allocateMemory (struct resources* resources, int memory) {
+int allocateMemory (struct resources* resources, int memory, int priority) {
+	// local variable declarations
  	int allocated = 1;
+ 	int maxMemory;
 
- 	for (int i = 0; i < MEMORY; i++) {
+ 	if (priority == 0)
+ 		maxMemory = MEMORY;
+ 	else
+ 		maxMemory = MEMORY-64;
+
+ 	for (int i = 0; i < maxMemory; i++) {
  		if (resources->memory[i] == 0) {
  			for (int j = i; j < i+memory; j++) {
- 				if (j >= 1024) {
-					// exceeded MEMORY, erase changes
- 					freeMemory(resources, i, 1024-i);
+ 				if (j >= maxMemory) {
+					// exceeded maxMemory, erase changes
+ 					freeMemory(resources, i, maxMemory-i);
 					return -1; // could not allocate memory
 				}
 
@@ -73,7 +86,60 @@ void freeMemory (struct resources* resources, int address, int memory) {
 	}
 }
 
-void loadDispatch (char fileName[], struct queue* queue) {
+int allocateIO (struct resources* resources, int ioRequirements[4]) {
+	// get current amount of each resource from the resources list and store
+	// them in an array for easy iteration
+	int availResources[4] = {resources->numPrinters, resources->numScanners,
+							 resources->numModems, resources->numCDDrives};
+	// loop 4 times, 1 time for each resource, and compare the two arrays
+	for (int i = 0; i < 4; i++) {
+		// check if the resources list does not have enough resources available
+		// to allocate to the process
+		if (ioRequirements[i] > availResources[i]) {
+			printf("%d %d\n", ioRequirements[i], availResources[i]);
+			return 0; // not enough resources available, return failed allocation
+		}
+	}
+	// enough resources are available to allocate, so allocate them
+	resources->numPrinters -= ioRequirements[0];
+	resources->numScanners -= ioRequirements[1];
+	resources->numModems -= ioRequirements[2];
+	resources->numCDDrives -= ioRequirements[3];
+
+	return 1; // successfully allocated resources
+}
+
+void freeIO (struct resources* resources, int allocatedIO[4]) {
+	// add all allocated IO back into the resources list
+	resources->numPrinters += allocatedIO[0];
+	resources->numScanners += allocatedIO[1];
+	resources->numModems += allocatedIO[2];
+	resources->numCDDrives += allocatedIO[3];
+}
+
+int allocateResources (struct resources* resources, int reqResources[5], int priority) {
+	// attempt to allocate memory for the process
+	int address = allocateMemory(resources, reqResources[0], priority);
+	// create an array of all IO devices the process requires
+	int ioRequirements[4] = {reqResources[1], reqResources[2], reqResources[3], reqResources[4]};
+	// attempt to allocate the IO devices
+	int allocatedIO = allocateIO(resources, ioRequirements);
+
+	if (address == -1 || allocatedIO == 0) // if memory or IO devices could not be allocated
+		return -1; // return failed allocation
+	else
+		return address; // successfully allocated resources, return address of allocated memory
+}
+
+void freeResources (struct resources* resources, int allocatedResources[5], int address) {
+	freeMemory(resources, address, allocatedResources[0]); // free allocated memory
+	// create array of all IO devices previously allocated for the process
+	int allocatedIO[4] = {allocatedResources[1], allocatedResources[2], allocatedResources[3], allocatedResources[4]};
+	freeIO(resources, allocatedIO); // free IO devices
+}
+
+void loadDispatch (char fileName[], struct queue* realtime, struct queue* priorityOne, struct queue* priorityTwo,
+				 																	   struct queue* priorityThree) {
 	FILE *file = fopen(fileName, "r");
 
 	if (file != NULL) {
@@ -94,12 +160,14 @@ void loadDispatch (char fileName[], struct queue* queue) {
 			struct process* newProcess = createProcess (atoi(args[0]), atoi(args[1]), atoi(args[2]), atoi(args[3]), 
 												 atoi(args[4]), atoi(args[5]), atoi(args[6]), atoi(args[7]));
 
-				if (args[1][0]-'0' == 0) {
-				push(queue, newProcess); // add to primary queue
-			}
-			else {
-				push(queue, newProcess); // add to secondary queue
-			}
+			if (atoi(args[1]) == 0)
+				push(realtime, newProcess); // add to primary queue
+			else if (atoi(args[1]) == 1)
+				push(priorityOne, newProcess); // add to secondary queue
+			else if (atoi(args[1]) == 2)
+				push(priorityTwo, newProcess);
+			else
+				push(priorityThree, newProcess);
 		}
 	} else {
 		printf("File could not be opened\nClosing program...\n");
