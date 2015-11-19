@@ -10,8 +10,6 @@
 #include <string.h>
 #include "utility.h"
 
- #define MEMORY 1024
-
 // Define your utility functions here, you will likely need to add more...
 
 void initializeResources (struct resources* resources) {
@@ -67,7 +65,7 @@ int allocateMemory (struct resources* resources, int memory, int priority) {
 				}
 				else {
 					// memory block occupied by other process, erase changes
-					freeMemory(resources, i, j-i);
+					freeMemory(resources, i, memory);
 					i += j; // allow i to jump to the point the new block was detected
 					allocated = 0;
 					break;
@@ -109,20 +107,10 @@ int allocateIO (struct resources* resources, int ioRequirements[4]) {
 }
 
 void freeIO (struct resources* resources, int allocatedIO[4]) {
-
-	printf("Freeing resources:  Printers: %d Scanners: %d Modems: %d Cd Drives: %d\n", 
-			allocatedIO[0], allocatedIO[1], allocatedIO[2], allocatedIO[3]);
-
-	printf("Resources Before:   Printers: %d Scanners: %d Modems: %d Cd Drives: %d\n", 
-			resources->numPrinters, resources->numScanners, resources->numModems, resources->numCDDrives);
-	// add all allocated IO back into the resources list
 	resources->numPrinters += allocatedIO[0];
 	resources->numScanners += allocatedIO[1];
 	resources->numModems += allocatedIO[2];
 	resources->numCDDrives += allocatedIO[3];
-
-	printf("Resources After:    Printers: %d Scanners: %d Modems: %d Cd Drives: %d\n", 
-			resources->numPrinters, resources->numScanners, resources->numModems, resources->numCDDrives);
 }
 
 int allocateResources (struct resources* resources, int reqResources[5], int priority) {
@@ -130,13 +118,19 @@ int allocateResources (struct resources* resources, int reqResources[5], int pri
 	int address = allocateMemory(resources, reqResources[0], priority);
 	// create an array of all IO devices the process requires
 	int ioRequirements[4] = {reqResources[1], reqResources[2], reqResources[3], reqResources[4]};
-	// attempt to allocate the IO devices
-	int allocatedIO = allocateIO(resources, ioRequirements);
 
-	if (address == -1 || allocatedIO == 0) // if memory or IO devices could not be allocated
+	if (address == -1) { // if memory could not be allocated
 		return -1; // return failed allocation
-	else
-		return address; // successfully allocated resources, return address of allocated memory
+	} else {
+		if (allocateIO(resources, ioRequirements) == 0) { // if IO devices could not be allocated
+			freeMemory(resources, address, reqResources[0]); // free memory
+			return -1; // return failed allocation
+		}
+		else {
+			return address; // allocation successful, return start of memory block
+		}
+		
+	}
 }
 
 void freeResources (struct resources* resources, int allocatedResources[5], int address) {
