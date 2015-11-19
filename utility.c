@@ -96,7 +96,6 @@ int allocateIO (struct resources* resources, int ioRequirements[4]) {
 		// check if the resources list does not have enough resources available
 		// to allocate to the process
 		if (ioRequirements[i] > availResources[i]) {
-			printf("%d %d\n", ioRequirements[i], availResources[i]);
 			return 0; // not enough resources available, return failed allocation
 		}
 	}
@@ -110,11 +109,20 @@ int allocateIO (struct resources* resources, int ioRequirements[4]) {
 }
 
 void freeIO (struct resources* resources, int allocatedIO[4]) {
+
+	printf("Freeing resources:  Printers: %d Scanners: %d Modems: %d Cd Drives: %d\n", 
+			allocatedIO[0], allocatedIO[1], allocatedIO[2], allocatedIO[3]);
+
+	printf("Resources Before:   Printers: %d Scanners: %d Modems: %d Cd Drives: %d\n", 
+			resources->numPrinters, resources->numScanners, resources->numModems, resources->numCDDrives);
 	// add all allocated IO back into the resources list
 	resources->numPrinters += allocatedIO[0];
 	resources->numScanners += allocatedIO[1];
 	resources->numModems += allocatedIO[2];
 	resources->numCDDrives += allocatedIO[3];
+
+	printf("Resources After:    Printers: %d Scanners: %d Modems: %d Cd Drives: %d\n", 
+			resources->numPrinters, resources->numScanners, resources->numModems, resources->numCDDrives);
 }
 
 int allocateResources (struct resources* resources, int reqResources[5], int priority) {
@@ -158,16 +166,16 @@ void loadDispatch (char fileName[], struct queue* realtime, struct queue* priori
 			}
 			// create a new process from each line of the file
 			struct process* newProcess = createProcess (atoi(args[0]), atoi(args[1]), atoi(args[2]), atoi(args[3]), 
-												 atoi(args[4]), atoi(args[5]), atoi(args[6]), atoi(args[7]));
+												 		atoi(args[4]), atoi(args[5]), atoi(args[6]), atoi(args[7]));
 
 			if (atoi(args[1]) == 0)
-				push(realtime, newProcess); // add to primary queue
+				push(realtime, newProcess); // add to realtime queue
 			else if (atoi(args[1]) == 1)
-				push(priorityOne, newProcess); // add to secondary queue
+				push(priorityOne, newProcess); // add to primary queue
 			else if (atoi(args[1]) == 2)
-				push(priorityTwo, newProcess);
+				push(priorityTwo, newProcess); // add to secondary queue
 			else
-				push(priorityThree, newProcess);
+				push(priorityThree, newProcess); // add to tertiary queue
 		}
 	} else {
 		printf("File could not be opened\nClosing program...\n");

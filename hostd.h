@@ -14,6 +14,6 @@
 // extern keyword such as in the following example:
 // extern void print_process(proc process);
 
- extern void executeQueue (struct resources* resources, struct queue* queue, struct queue* nextQueue);
+extern int executeQueue (struct resources* resources, struct queue* queue, struct queue* nextQueue);
 
 #endif /* HOSTD_H_ */

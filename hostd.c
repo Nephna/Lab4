@@ -23,25 +23,41 @@
 #define PROCESS "./process"
 
 // Put global environment variables here
+int dispatchTime;
+int status;
 
- void executeQueue (struct resources* resources, struct queue* queue, struct queue* nextQueue) {
+ int executeQueue (struct resources* resources, struct queue* queue, struct queue* nextQueue) {
     // variables internal to executeQueue
     struct process* process;
+    struct process* tracker;
     pid_t pid = 0;
     process = (struct process*)malloc(sizeof(struct process));
+    tracker = NULL;
 
     // loop through all processes in the queue
     while (queue->head != NULL) {
         process = pop(queue); // get a process from the queue
         int reqResources[5];
 
+        if (tracker == process) {
+            push(queue, process);
+            return 0; // no processes to execute, exit with failure
+        }
+        if (tracker == NULL)
+            tracker = process;
+
+        // create an array of all resources the process requires
+        reqResources[0] = process->memory;
+        reqResources[1] = process->printers;
+        reqResources[2] = process->scanners;
+        reqResources[3] = process->modems;
+        reqResources[4] = process->cdDrives;
+
         if (process->address == -1) { // if process has unallocated resources, try to allocate them
-            // create an array of all resources the process requires
-            reqResources[0] = process->memory;
-            reqResources[1] = process->printers;
-            reqResources[2] = process->scanners;
-            reqResources[3] = process->modems;
-            reqResources[4] = process->cdDrives;
+            if (process->arrivalTime > dispatchTime) {
+                push(queue, process);
+                return 0; // process has not arrived, return with failure
+            }
 
             process->address = allocateResources(resources, reqResources, process->priority);
 
@@ -62,33 +78,46 @@
         // child process
         if (pid == 0) {
             process->pid = getpid(); // set process pid in child
+            //printf("PID: %d    Arrival Time: %d     Priority: %d    Runtime: %d     Memory: %d\nPrinters: %d    Scanners: %d    Modems: %d  Cd Drives: %d\n",
+            //        process->pid, process->arrivalTime, process->priority, process->runTime, process->memory,
+            //        process->printers, process->scanners, process->modems, process->cdDrives);
+            printf("Required resources: Printers: %d Scanners: %d Modems: %d Cd Drives: %d\n",
+            process->printers, process->scanners, process->modems, process->cdDrives);
+            printf("Current resources:  Printers: %d Scanners: %d Modems: %d Cd Drives: %d\n", 
+            resources->numPrinters, resources->numScanners, resources->numModems, resources->numCDDrives);
             execl(PROCESS, 0);
             exit(0);
         }
         // parent process
-        if (process->suspended == 1) {
+        if (process->suspended == 1)
             kill(pid, SIGCONT);
-        }
+
         if (process->priority == 0) { // if process is in realTime queue
             sleep(process->runTime); // sleep for full duration of process
             kill(pid, SIGINT); // terminate process after runTime
-            waitpid(pid, NULL, 0); // join child process
+            waitpid(pid, &status, WUNTRACED); // join child process
             freeResources(resources, reqResources, process->address); // free resources
         } else {
             sleep(1); // wait for the process to run for 1 second
             process->runTime -= 1;
             if (process->runTime == 0) {
                 kill(pid, SIGINT); // terminate process
-                waitpid(pid, NULL, 0); // join process
+                waitpid(pid, &status, WUNTRACED); // join process
                 freeResources(resources, reqResources, process->address); // free resources
             } else {
                 kill(pid, SIGTSTP); // pause process
+                waitpid(pid, &status, WUNTRACED);
                 process->suspended = 1;
                 push(nextQueue, process);
             }
         }
         process = NULL;
+        tracker = NULL;
+        return 1; // process executed, return with success
     }
+    process = NULL;
+    tracker = NULL;
+    return 0; // queue is empty, return failure
  }
 
 int main(int argc, char *argv[]) {
@@ -104,6 +133,8 @@ int main(int argc, char *argv[]) {
     resources = (struct resources*)malloc(sizeof(struct resources));
     initializeResources(resources);
 
+    dispatchTime = 0;
+
     // load the dispatchlist and add process structure instance to 
     // job dispatch list queue
     
@@ -113,7 +144,22 @@ int main(int argc, char *argv[]) {
     //executeQueue(resources, realtime, NULL);
 
     // execute processes in the priorityOne queue
-    executeQueue(resources, priorityOne, priorityTwo);
+    while (realtime->head != NULL || priorityOne->head != NULL || priorityTwo->head != NULL || priorityThree->head != NULL) {
+        if (executeQueue(resources, realtime, NULL) == 1){
+            dispatchTime++;
+            continue;
+        } else if (executeQueue(resources, priorityOne, priorityTwo) == 1) {
+            dispatchTime++;
+            continue;
+        } else if (executeQueue(resources, priorityTwo, priorityThree) == 1) {
+            dispatchTime++;
+            continue;
+        } else if (executeQueue(resources, priorityThree, priorityThree) == 1) {
+            dispatchTime++;
+            continue;
+        }
+        dispatchTime++;
+    }
 
     // Iterate through each item in the job dispatch list, add each process
     // to the appropriate queues
